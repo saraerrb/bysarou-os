@@ -1,6 +1,7 @@
 {
   "name": "bysarou-monorepo",
   "private": true,
+  "packageManager": "pnpm@9.12.0",
   "scripts": {
     "dev": "pnpm --parallel --recursive run dev",
     "dev:admin": "pnpm --filter bysarou-admin dev",
