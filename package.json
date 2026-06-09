@@ -1,0 +1,10 @@
+{
+  "name": "bysarou-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --recursive run dev",
+    "dev:admin": "pnpm --filter bysarou-admin dev",
+    "dev:storefront": "pnpm --filter bysarou-storefront dev",
+    "dev:api": "pnpm --filter bysarou-api dev"
+  }
+}

@@ -1,0 +1,328 @@
+// BySarou OS - Prisma Schema (Multi-Store SaaS - SQLite Compatible)
+// ====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Multi-Store Core ────────────────────────────────────────────────
+
+model Store {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String   @map("owner_id")
+  currency  String   @default("MAD")
+  country   String   @default("Morocco")
+  timezone  String   @default("Africa/Casablanca")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members     StoreMember[]
+  categories  Category[]
+  sizes       Size[]
+  colors      Color[]
+  products    Product[]
+  orders      Order[]
+  carriers    Carrier[]
+  expenses    Expense[]
+  settings    Settings?
+  automations AutomationLog[]
+  returns     Return[]
+
+  @@map("stores")
+}
+
+model StoreMember {
+  id        String   @id @default(cuid())
+  storeId   String   @map("store_id")
+  userId    String   @map("user_id")
+  role      String   @default("CALL_AGENT") // Enum converted to String for SQLite
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, userId])
+  @@map("store_members")
+}
+
+// ─── Auth Model ──────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships StoreMember[]
+
+  @@map("users")
+}
+
+// ─── Inventory Module ─────────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  storeId   String?  @map("store_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store    Store?    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@map("categories")
+}
+
+model Size {
+  id           String   @id @default(cuid())
+  storeId      String?  @map("store_id")
+  name         String
+  displayOrder Int      @default(0) @map("display_order")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  store    Store?           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variants ProductVariant[]
+
+  @@map("sizes")
+}
+
+model Color {
+  id        String   @id @default(cuid())
+  storeId   String?  @map("store_id")
+  name      String
+  hexCode   String   @default("#000000") @map("hex_code")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store    Store?           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variants ProductVariant[]
+
+  @@map("colors")
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  storeId      String?  @map("store_id")
+  name         String
+  description  String?
+  price        Float
+  costPrice    Float    @default(0) @map("cost_price")
+  sellingPrice Float    @default(0) @map("selling_price")
+  categoryId   String   @map("category_id")
+  image        String?
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  category Category         @relation(fields: [categoryId], references: [id])
+  variants ProductVariant[]
+  store    Store?           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id            String   @id @default(cuid())
+  productId     String   @map("product_id")
+  sku           String   @unique
+  size          String?
+  color         String?
+  sizeId        String?  @map("size_id")
+  colorId       String?  @map("color_id")
+  stockQuantity Int      @default(0) @map("stock_quantity")
+  costPrice     Float?   @map("cost_price")
+  sellingPrice  Float?   @map("selling_price")
+  barcode       String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sizeRef    Size?           @relation(fields: [sizeId], references: [id])
+  colorRef   Color?          @relation(fields: [colorId], references: [id])
+  movements  StockMovement[]
+  orderItems OrderItem[]
+
+  @@unique([productId, sizeId, colorId])
+  @@map("product_variants")
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  variantId String   @map("variant_id")
+  type      String // Enum: IN, OUT, ADJUST, RETURN
+  quantity  Int
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@map("stock_movements")
+}
+
+// ─── Order Module ────────────────────────────────────────────────────
+
+model Order {
+  id              String   @id @default(cuid())
+  storeId         String?  @map("store_id")
+  customerName    String   @map("customer_name")
+  customerPhone   String   @map("customer_phone")
+  customerCity    String   @map("customer_city")
+  customerAddress String   @map("customer_address")
+  totalAmount     Float    @map("total_amount")
+  status          String   @default("NEW") // Enum converted
+  shippingCost    Float    @default(0) @map("shipping_cost")
+  codFee          Float    @default(0) @map("cod_fee")
+  packagingCost   Float    @default(0) @map("packaging_cost")
+  carrierId       String?  @map("carrier_id")
+  trackingNumber  String?  @unique @map("tracking_number")
+  callAttempts    Int      @default(0) @map("call_attempts")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  store   Store?         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  carrier Carrier?       @relation(fields: [carrierId], references: [id])
+  items   OrderItem[]
+  history OrderHistory[]
+  returns Return[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String @map("order_id")
+  variantId String @map("variant_id")
+  quantity  Int
+  price     Float
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@map("order_items")
+}
+
+model OrderHistory {
+  id        String   @id @default(cuid())
+  orderId   String   @map("order_id")
+  status    String
+  notes     String?
+  agentName String?  @map("agent_name")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_history")
+}
+
+// ─── Logistics Module ────────────────────────────────────────────────
+
+model Carrier {
+  id           String   @id @default(cuid())
+  storeId      String?  @map("store_id")
+  name         String
+  contactName  String?  @map("contact_name")
+  contactPhone String?  @map("contact_phone")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  store  Store?  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@map("carriers")
+}
+
+model Return {
+  id         String   @id @default(cuid())
+  storeId    String?  @map("store_id")
+  orderId    String   @map("order_id")
+  status     String   @default("PENDING") // PENDING, RECEIVED, RESTOCKED, DAMAGED
+  reason     String
+  notes      String?
+  returnDate DateTime @default(now()) @map("return_date")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("returns")
+}
+
+// ─── Finance Module ──────────────────────────────────────────────────
+
+model Expense {
+  id          String   @id @default(cuid())
+  storeId     String?  @map("store_id")
+  category    String // ADVERTISING, SHIPPING, PACKAGING, SALARY, RENT, OTHER
+  amount      Float
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("expenses")
+}
+
+// ─── Settings Module ─────────────────────────────────────────────────
+
+model Settings {
+  id      String @id @default(cuid())
+  storeId String @unique @map("store_id")
+
+  // General
+  storeName String? @map("store_name")
+  logoUrl   String? @map("logo_url")
+  currency  String  @default("MAD")
+  timezone  String  @default("Africa/Casablanca")
+  language  String  @default("en")
+
+  // Inventory
+  lowStockAlert Int     @default(10) @map("low_stock_alert")
+  skuPrefix     String? @map("sku_prefix")
+
+  // Shipping Defaults
+  defaultShipping  Float  @default(45) @map("default_shipping")
+  freeShippingOver Float? @map("free_shipping_over")
+
+  // Notifications
+  whatsappEnabled Boolean @default(false) @map("whatsapp_enabled")
+  whatsappNumber  String? @map("whatsapp_number")
+
+  // Integrations
+  googleSheetUrl  String? @map("google_sheet_url")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("settings")
+}
+
+// ─── Automation Module ───────────────────────────────────────────────
+
+model AutomationLog {
+  id        String   @id @default(cuid())
+  storeId   String   @map("store_id")
+  ruleName  String   @map("rule_name")
+  entityId  String   @map("entity_id")
+  status    String   @default("SUCCESS") // SUCCESS, FAILED, SKIPPED
+  details   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, ruleName])
+  @@map("automation_logs")
+}
